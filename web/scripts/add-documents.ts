@@ -1,7 +1,10 @@
-// Direct database script using Neon serverless driver
-import { neon } from "@neondatabase/serverless";
+// Direct database script using pg client
+import { Client } from "pg";
 
-const sql = neon(process.env.DATABASE_URL!);
+const client = new Client({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
 
 const newDocuments = [
   {
@@ -246,26 +249,40 @@ A: 法定相続分での仮払い制度（上限150万円）をご利用いた�
 ];
 
 async function main() {
-  console.log("Connecting to database...");
+  await client.connect();
+  console.log("Connected to database");
 
   for (const doc of newDocuments) {
     // Check if document already exists
-    const existing = await sql`SELECT id FROM "Document" WHERE title = ${doc.title}`;
+    const existing = await client.query(
+      'SELECT id FROM "Document" WHERE title = $1',
+      [doc.title]
+    );
 
-    if (existing.length > 0) {
+    if (existing.rows.length > 0) {
       console.log(`Skipping existing document: ${doc.title}`);
       continue;
     }
 
     // Insert new document
-    await sql`
-      INSERT INTO "Document" (id, title, category, content, "filePath", version, confidentiality, tags, "createdBy", "isActive", "createdAt", "updatedAt")
-      VALUES (gen_random_uuid(), ${doc.title}, ${doc.category}, ${doc.content}, ${doc.filePath}, ${doc.version}, ${doc.confidentiality}, ${doc.tags}, 'system', true, NOW(), NOW())
-    `;
+    await client.query(
+      `INSERT INTO "Document" (id, title, category, content, "filePath", version, confidentiality, tags, "createdBy", "isActive", "createdAt", "updatedAt")
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 'system', true, NOW(), NOW())`,
+      [
+        doc.title,
+        doc.category,
+        doc.content,
+        doc.filePath,
+        doc.version,
+        doc.confidentiality,
+        doc.tags,
+      ]
+    );
     console.log(`Added document: ${doc.title}`);
   }
 
   console.log("\nDone adding documents!");
+  await client.end();
 }
 
 main().catch((e) => {
