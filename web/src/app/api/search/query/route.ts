@@ -23,9 +23,14 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    // Use mock response if API keys are not configured
-    const useMock =
-      !process.env.ANTHROPIC_API_KEY || !process.env.OPENAI_API_KEY;
+    // Use mock response if API keys are not configured or are placeholders
+    const hasValidOpenAIKey = process.env.OPENAI_API_KEY &&
+      process.env.OPENAI_API_KEY.length > 20 &&
+      !process.env.OPENAI_API_KEY.includes("...");
+    const hasValidAnthropicKey = process.env.ANTHROPIC_API_KEY &&
+      process.env.ANTHROPIC_API_KEY.length > 20 &&
+      !process.env.ANTHROPIC_API_KEY.includes("...");
+    const useMock = !hasValidOpenAIKey || !hasValidAnthropicKey;
 
     const result = useMock
       ? await generateMockRAGResponse(question)
