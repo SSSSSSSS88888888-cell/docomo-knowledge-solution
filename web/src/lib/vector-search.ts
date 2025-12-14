@@ -1,4 +1,4 @@
-import { prisma } from "./db";
+import { pool } from "./db";
 import { generateEmbedding, splitIntoChunks } from "./embeddings";
 
 export interface SimilarChunk {
@@ -15,30 +15,23 @@ export async function searchSimilarChunks(
   const queryEmbedding = await generateEmbedding(query);
   const embeddingStr = `[${queryEmbedding.join(",")}]`;
 
-  const results = await prisma.$queryRaw<
-    Array<{
-      id: string;
-      documentId: string;
-      content: string;
-      documentTitle: string;
-      score: number;
-    }>
-  >`
-    SELECT
+  const result = await pool.query(
+    `SELECT
       dc.id,
       dc."documentId",
       dc.content,
       d.title as "documentTitle",
-      1 - (dc.embedding <=> ${embeddingStr}::vector) as score
+      1 - (dc.embedding <=> $1::vector) as score
     FROM "DocumentChunk" dc
     JOIN "Document" d ON dc."documentId" = d.id
     WHERE d."isActive" = true
       AND dc.embedding IS NOT NULL
-    ORDER BY dc.embedding <=> ${embeddingStr}::vector
-    LIMIT ${limit}
-  `;
+    ORDER BY dc.embedding <=> $1::vector
+    LIMIT $2`,
+    [embeddingStr, limit]
+  );
 
-  return results.map((r) => ({
+  return result.rows.map((r: { documentId: string; documentTitle: string; content: string; score: number }) => ({
     documentId: r.documentId,
     documentTitle: r.documentTitle,
     content: r.content,
@@ -51,9 +44,10 @@ export async function indexDocument(
   content: string
 ): Promise<void> {
   // Delete existing chunks for this document
-  await prisma.documentChunk.deleteMany({
-    where: { documentId },
-  });
+  await pool.query(
+    `DELETE FROM "DocumentChunk" WHERE "documentId" = $1`,
+    [documentId]
+  );
 
   // Split content into chunks
   const chunks = splitIntoChunks(content, 500);
@@ -63,16 +57,10 @@ export async function indexDocument(
     const embedding = await generateEmbedding(chunks[i]);
     const embeddingStr = `[${embedding.join(",")}]`;
 
-    await prisma.$executeRaw`
-      INSERT INTO "DocumentChunk" (id, "documentId", content, "chunkIndex", embedding, "createdAt")
-      VALUES (
-        gen_random_uuid(),
-        ${documentId},
-        ${chunks[i]},
-        ${i},
-        ${embeddingStr}::vector,
-        NOW()
-      )
-    `;
+    await pool.query(
+      `INSERT INTO "DocumentChunk" (id, "documentId", content, "chunkIndex", embedding, "createdAt")
+       VALUES (gen_random_uuid(), $1, $2, $3, $4::vector, NOW())`,
+      [documentId, chunks[i], i, embeddingStr]
+    );
   }
 }

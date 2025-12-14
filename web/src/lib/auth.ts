@@ -1,6 +1,6 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { prisma } from "./db";
+import { db } from "./db";
 import bcrypt from "bcryptjs";
 
 declare module "next-auth" {
@@ -45,9 +45,8 @@ export const authOptions: NextAuthOptions = {
         console.log("[Auth] Attempting login for:", credentials.email);
 
         try {
-          const user = await prisma.user.findUnique({
-            where: { email: credentials.email },
-          });
+          // Use pg directly instead of Prisma
+          const user = await db.findUserByEmail(credentials.email);
 
           console.log("[Auth] User found:", !!user);
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { generateRAGResponse, generateMockRAGResponse } from "@/lib/ai";
-import { prisma } from "@/lib/db";
+import { db } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -38,35 +38,31 @@ export async function POST(request: NextRequest) {
 
     const responseTimeMs = Date.now() - startTime;
 
-    // Save inquiry log
-    const inquiry = await prisma.inquiry.create({
-      data: {
-        userId: session.user.id,
-        question,
-        aiResponse: result.response,
-        sourceDocs: result.sources,
-        responseTimeMs,
-        resolved: result.sources.length > 0,
-      },
+    // Save inquiry log using pg directly
+    const inquiry = await db.createInquiry({
+      userId: session.user.id,
+      question,
+      aiResponse: result.response,
+      sourceDocs: result.sources,
+      responseTimeMs,
+      resolved: result.sources.length > 0,
     });
 
-    // Create audit log
-    await prisma.auditLog.create({
-      data: {
-        userId: session.user.id,
-        action: "SEARCH",
-        target: question.slice(0, 100),
-        details: {
-          inquiryId: inquiry.id,
-          sourceCount: result.sources.length,
-          mock: useMock,
-        },
-        ipAddress:
-          request.headers.get("x-forwarded-for") ||
-          request.headers.get("x-real-ip") ||
-          "unknown",
-        userAgent: request.headers.get("user-agent") || undefined,
+    // Create audit log using pg directly
+    await db.createAuditLog({
+      userId: session.user.id,
+      action: "SEARCH",
+      target: question.slice(0, 100),
+      details: {
+        inquiryId: inquiry.id,
+        sourceCount: result.sources.length,
+        mock: useMock,
       },
+      ipAddress:
+        request.headers.get("x-forwarded-for") ||
+        request.headers.get("x-real-ip") ||
+        "unknown",
+      userAgent: request.headers.get("user-agent") || undefined,
     });
 
     return NextResponse.json({
