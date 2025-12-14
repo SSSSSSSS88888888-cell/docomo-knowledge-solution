@@ -183,11 +183,16 @@ A: 可能です。窓口またはインターネットバンキングから手�
   ];
 
   for (const doc of documents) {
-    await prisma.document.upsert({
-      where: { id: doc.title },
-      update: {},
-      create: doc,
+    // Use create instead of upsert since we don't have a unique constraint on title
+    const existingDoc = await prisma.document.findFirst({
+      where: { title: doc.title },
     });
+
+    if (!existingDoc) {
+      await prisma.document.create({
+        data: doc,
+      });
+    }
   }
 
   console.log("Sample documents created");
