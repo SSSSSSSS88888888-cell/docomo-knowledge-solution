@@ -9,7 +9,8 @@
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "db:index": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/index-documents.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.0",
