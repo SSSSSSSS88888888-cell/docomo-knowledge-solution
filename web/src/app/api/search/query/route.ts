@@ -32,47 +32,56 @@ export async function POST(request: NextRequest) {
       !process.env.ANTHROPIC_API_KEY.includes("...");
     const useMock = !hasValidOpenAIKey || !hasValidAnthropicKey;
 
+    console.log("[Search] Starting search, useMock:", useMock);
+
     const result = useMock
       ? await generateMockRAGResponse(question)
       : await generateRAGResponse(question, session.user.id);
 
     const responseTimeMs = Date.now() - startTime;
+    console.log("[Search] Got result in", responseTimeMs, "ms");
 
-    // Save inquiry log using pg directly
-    const inquiry = await db.createInquiry({
-      userId: session.user.id,
-      question,
-      aiResponse: result.response,
-      sourceDocs: result.sources,
-      responseTimeMs,
-      resolved: result.sources.length > 0,
-    });
+    // Try to save logs, but don't fail the request if logging fails
+    let inquiryId = "temp-" + Date.now();
+    try {
+      const inquiry = await db.createInquiry({
+        userId: session.user.id,
+        question,
+        aiResponse: result.response,
+        sourceDocs: result.sources,
+        responseTimeMs,
+        resolved: result.sources.length > 0,
+      });
+      inquiryId = inquiry.id;
 
-    // Create audit log using pg directly
-    await db.createAuditLog({
-      userId: session.user.id,
-      action: "SEARCH",
-      target: question.slice(0, 100),
-      details: {
-        inquiryId: inquiry.id,
-        sourceCount: result.sources.length,
-        mock: useMock,
-      },
-      ipAddress:
-        request.headers.get("x-forwarded-for") ||
-        request.headers.get("x-real-ip") ||
-        "unknown",
-      userAgent: request.headers.get("user-agent") || undefined,
-    });
+      await db.createAuditLog({
+        userId: session.user.id,
+        action: "SEARCH",
+        target: question.slice(0, 100),
+        details: {
+          inquiryId: inquiry.id,
+          sourceCount: result.sources.length,
+          mock: useMock,
+        },
+        ipAddress:
+          request.headers.get("x-forwarded-for") ||
+          request.headers.get("x-real-ip") ||
+          "unknown",
+        userAgent: request.headers.get("user-agent") || undefined,
+      });
+    } catch (logError) {
+      console.error("[Search] Failed to save logs:", logError);
+      // Continue anyway - we still have the search result
+    }
 
     return NextResponse.json({
-      inquiryId: inquiry.id,
+      inquiryId,
       response: result.response,
       sources: result.sources,
       responseTimeMs,
     });
   } catch (error) {
-    console.error("Search error:", error);
+    console.error("[Search] Error:", error);
     return NextResponse.json(
       { error: "An error occurred while processing your request" },
       { status: 500 }
